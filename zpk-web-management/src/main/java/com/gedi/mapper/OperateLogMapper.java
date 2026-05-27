@@ -1,7 +1,6 @@
 package com.gedi.mapper;
 
 import com.gedi.pojo.OperateLog;
-import com.gedi.pojo.OperateLog;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 
