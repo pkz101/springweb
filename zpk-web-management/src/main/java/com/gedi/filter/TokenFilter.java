@@ -3,18 +3,22 @@ package com.gedi.filter;
 import com.gedi.utils.CurrentHolder;
 import com.gedi.utils.JwtUtils;
 import io.jsonwebtoken.Claims;
-import jakarta.servlet.*;
+import jakarta.servlet.Filter;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.ServletResponse;
 import jakarta.servlet.annotation.WebFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.util.StringUtils;
-import java.io.IOException;
 
-/**
- * 令牌校验过滤器
- */
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+
 @Slf4j
 @WebFilter(urlPatterns = "/*")
 public class TokenFilter implements Filter {
@@ -23,44 +27,54 @@ public class TokenFilter implements Filter {
     public void doFilter(ServletRequest req, ServletResponse resp, FilterChain chain) throws IOException, ServletException {
         HttpServletRequest request = (HttpServletRequest) req;
         HttpServletResponse response = (HttpServletResponse) resp;
-        //1. 获取请求 url。
-        String url = request.getRequestURL().toString();
 
-        //2. 判断请求 url 中是否包含 login，如果包含，说明是登录操作，放行。
-        if(url.contains("login")){ //登录请求
-            log.info("登录请求 , 直接放行");
+        if (isPublicRequest(request)) {
             chain.doFilter(request, response);
             return;
         }
 
-        //3. 获取请求头中的令牌（token）。
-        String jwt = request.getHeader("token");
-
-        //4. 判断令牌是否存在，如果不存在，返回错误结果（未登录）。
-        if(!StringUtils.hasLength(jwt)){ //jwt 为空
-            log.info("获取到 jwt 令牌为空，返回401状态码");
-            response.setStatus(HttpStatus.UNAUTHORIZED.value());
+        String jwt = extractToken(request);
+        if (!StringUtils.hasText(jwt)) {
+            writeUnauthorized(response, "Missing token");
             return;
         }
 
-        //5. 解析 token，如果解析失败，返回错误结果（未登录）。
         try {
             Claims claims = JwtUtils.parseJWT(jwt);
-            log.info("解析到用户信息: {}", claims);
-            CurrentHolder.setCurrentId((Integer) claims.get("id"));
-
+            Object id = claims.get("id");
+            if (id instanceof Number number) {
+                CurrentHolder.setCurrentId(number.intValue());
+            }
+            chain.doFilter(request, response);
         } catch (Exception e) {
-            log.info("解析令牌失败，返回错误结果");
-            response.setStatus(HttpStatus.UNAUTHORIZED.value());
-            return;
+            log.info("Invalid token: {}", e.getMessage());
+            writeUnauthorized(response, "Invalid token");
+        } finally {
+            CurrentHolder.remove();
         }
-
-        //6. 放行。
-        log.info("令牌合法，放行");
-        chain.doFilter(request , response);
-
-        //7. 清空当前线程绑定的id
-        CurrentHolder.remove();
     }
 
+    private boolean isPublicRequest(HttpServletRequest request) {
+        return "OPTIONS".equalsIgnoreCase(request.getMethod()) || "/login".equals(request.getRequestURI());
+    }
+
+    private String extractToken(HttpServletRequest request) {
+        String token = request.getHeader("token");
+        if (StringUtils.hasText(token)) {
+            return token;
+        }
+
+        String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
+        if (StringUtils.hasText(authorization) && authorization.startsWith("Bearer ")) {
+            return authorization.substring(7);
+        }
+        return null;
+    }
+
+    private void writeUnauthorized(HttpServletResponse response, String message) throws IOException {
+        response.setStatus(HttpStatus.UNAUTHORIZED.value());
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.setContentType("application/json;charset=UTF-8");
+        response.getWriter().write("{\"code\":0,\"msg\":\"" + message + "\"}");
+    }
 }

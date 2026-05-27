@@ -2,7 +2,6 @@ package com.gedi.controller;
 
 import com.gedi.pojo.*;
 import com.gedi.service.EmpService;
-import jakarta.websocket.server.PathParam;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
